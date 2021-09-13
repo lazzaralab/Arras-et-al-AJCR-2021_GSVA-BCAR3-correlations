@@ -1,4 +1,4 @@
-# Arras-et-al-AJCR-2021_GSVA-BCAR3-corrleation-calculations
+# Arras-et-al-AJCR-2021_GSVA-BCAR3-correlation-calculations
  
 This repository contains the code needed to calculate GSVA scores and Spearman rank correlations of those GSVA scores against BCAR3 mRNA expression data from the Cancer Cell Line Encyclopedia (CCLE) using data from all available triple-negative breast cancer (TNBC) cell lines in the CCLE, as shown in Figure 6 of Arras et al., AJCR (2021).
 
