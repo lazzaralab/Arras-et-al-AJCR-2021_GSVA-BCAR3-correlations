@@ -35,56 +35,6 @@ cwd
 setwd(cwd)
 ```
 
-# Helpful/helper functions
-```{r Custom ggplot theme for plot background}
-theme_cust <- function(ticks, axis, box, lnsz, xtickangle=0, hjust=NULL, vjust=NULL){
-  if (missing(ticks)){
-    ticks <- TRUE
-  }
-  if (missing(axis)){
-    axis <- "y"
-  }
-  if (missing(box)){
-    box <- TRUE
-  }
-  if (missing(lnsz)){
-    lnsz <- 1
-  }
-  if (ticks == FALSE & axis == "y" ){
-    theme_out <- theme(
-      axis.text.y = element_blank(), axis.ticks.y = element_blank(), # Make y axis ticks blank
-      axis.line.y = element_blank(),
-      axis.line.x = element_blank(),
-      panel.background = element_rect(size = lnsz, color = "black", fill = "white"),
-      )
-  }
-  else if (ticks == FALSE & axis != "y"){
-    theme_out <- theme(
-      axis.text.x = element_blank(), axis.ticks.x = element_blank(), # Make x axis ticks blank
-      axis.line.y = element_blank(),
-      axis.line.x = element_blank(),
-      panel.background = element_rect(size = lnsz, color = "black", fill = "white"),
-      )
-  }
-  else {
-     theme_out <- theme(
-       axis.line.y = element_blank(),
-       axis.line.x = element_blank(),
-       panel.background = element_rect(size = lnsz, color = "black", fill = "white"),
-       axis.text.x = element_text(angle=xtickangle, hjust = hjust, vjust=vjust),
-       ) 
-  }
-  if (box != TRUE) {
-    theme_out <- theme_out + theme(panel.background = element_blank(),
-                                   axis.line.y = element_line(size = lnsz, color = "black"),
-                                   axis.line.x = element_line(size = lnsz, color = "black")
-                                   )
-  } else {
-    theme_out <- theme_out
-  }
-}
-```
-
 
 # Load publicly available data
 ## CCLE Data
