@@ -228,13 +228,13 @@ gsva1 <- rs.b3_cp %>%
     ) %>% 
   mutate(gene.set = str_to_sentence(gene.set))
 
-cap_phrases <- c("MET","FGFR2 IIIA TM","EGFR","Rap1","Rac1")
+cap_words <- c("MET","FGFR2 IIIA TM","EGFR","Rap1","Rac1","PTPN11") # words to capitalize in plot labels
 
-for(i in 1:length(cap_phrases)){
+for(i in 1:length(cap_words)){
   gsva1 <- gsva1 %>% 
     mutate(
-      gene.set = cap_phrases[i] %>% str_replace(string=gene.set, pattern=str_to_lower(.), replacement=.),
-      gene.set = cap_phrases[i] %>% str_replace(string=gene.set, pattern=str_to_sentence(.), replacement=.)
+      gene.set = cap_words[i] %>% str_replace(string=gene.set, pattern=str_to_lower(.), replacement=.),
+      gene.set = cap_words[i] %>% str_replace(string=gene.set, pattern=str_to_sentence(.), replacement=.)
       ) %>% 
     mutate(gene.set = factor(gene.set, levels=gene.set))
 }
