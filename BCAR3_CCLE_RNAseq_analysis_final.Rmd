@@ -1,0 +1,309 @@
+---
+title: "GSVA Analysis of CCLE RNA-seq Data"
+output: 
+  html_document: 
+    fig_height: 8
+    fig_width: 18
+    theme: spacelab
+    toc: yes
+Author: Paul J. Myers
+R version: 4.1.0
+---
+
+
+# Housekeeping Code
+We load the necessary libraries for this script and clear the R workspace.
+
+```{r  Load packages,message=FALSE}
+### Load packages:
+library(tidyverse)
+library(magrittr)
+library(cowplot)
+library(Hmisc)
+```
+
+```{r Clear environment}
+### Clear R workspace:
+rm(list=ls())
+```
+
+```{r Check and set working directory}
+### Check current working directory:
+cwd <- getwd()
+cwd
+### Set working directory:
+setwd(cwd)
+```
+
+# Helpful/helper functions
+```{r Custom ggplot theme for plot background}
+theme_cust <- function(ticks, axis, box, lnsz, xtickangle=0, hjust=NULL, vjust=NULL){
+  if (missing(ticks)){
+    ticks <- TRUE
+  }
+  if (missing(axis)){
+    axis <- "y"
+  }
+  if (missing(box)){
+    box <- TRUE
+  }
+  if (missing(lnsz)){
+    lnsz <- 1
+  }
+  if (ticks == FALSE & axis == "y" ){
+    theme_out <- theme(
+      axis.text.y = element_blank(), axis.ticks.y = element_blank(), # Make y axis ticks blank
+      axis.line.y = element_blank(),
+      axis.line.x = element_blank(),
+      panel.background = element_rect(size = lnsz, color = "black", fill = "white"),
+      )
+  }
+  else if (ticks == FALSE & axis != "y"){
+    theme_out <- theme(
+      axis.text.x = element_blank(), axis.ticks.x = element_blank(), # Make x axis ticks blank
+      axis.line.y = element_blank(),
+      axis.line.x = element_blank(),
+      panel.background = element_rect(size = lnsz, color = "black", fill = "white"),
+      )
+  }
+  else {
+     theme_out <- theme(
+       axis.line.y = element_blank(),
+       axis.line.x = element_blank(),
+       panel.background = element_rect(size = lnsz, color = "black", fill = "white"),
+       axis.text.x = element_text(angle=xtickangle, hjust = hjust, vjust=vjust),
+       ) 
+  }
+  if (box != TRUE) {
+    theme_out <- theme_out + theme(panel.background = element_blank(),
+                                   axis.line.y = element_line(size = lnsz, color = "black"),
+                                   axis.line.x = element_line(size = lnsz, color = "black")
+                                   )
+  } else {
+    theme_out <- theme_out
+  }
+}
+```
+
+
+# Load publicly available data
+## CCLE Data
+We now load RNA-seq data from the Cancer Cell Line Encyclopedia (CCLE). (See https://depmap.org/portal/download/ and download the file "CCLE_expression.csv" for DepMap release 21Q2.) We are only interested in using the RNA-seq data for protein coding genes. Other data from the CCLE, including information on all of the cell lines in the CCLE (required for the code below) are also available for download from this portal. The RNA-seq data are supplied as log2-transformed, 1-shifted RSEM TPM values, denoted below as $x_{i,j}^{log}$:
+
+$$x_{i,j}^{log}=log_2(TPM_{i,j}+1)$$
+We'll start by first loading the information on all triple-negative breast cancer (TNBC) cell lines that are in the CCLE and then loading the TNBC RNA-seq data itself.
+```{r Load CCLE cell line info, warning=FALSE}
+##### Load cell line info:
+## Path for cell line info:
+fn.cells <- "CCLE_sample_info.csv" 
+
+## Load info for TNBC cell lines:
+cl.sum <- read.csv(fn.cells)   #Cell line summaries
+cl.id <- cl.sum$DepMap_ID %>% as.character()  #DepMap IDs for cell lines
+cl.name <- cl.sum$stripped_cell_line_name %>% as.character()  #Cell line names
+ccle.names <- cl.sum$CCLE_Name %>% as.character() #CCLE cell line names
+
+## Desired TNBC cell lines:
+subtype <- c("ERneg_HER2neg")
+tcl.names <- which(cl.sum$lineage_sub_subtype %in% subtype) %>%
+  cl.sum[.,] %>%
+  .$stripped_cell_line_name %>%
+  as.character %>%
+  c("HS274T")
+
+## Extract TNBC cell line names:
+tcl.ind <- which(cl.sum$stripped_cell_line_name %in% tcl.names)
+tcl.info <- cl.sum[tcl.ind,]
+tcl.subtype <- cl.sum[tcl.ind,c("stripped_cell_line_name","lineage_molecular_subtype")]; tcl.subtype[tcl.subtype$stripped_cell_line_name=="HS274T",2] <- "basal_B"
+tcl.id <- cl.sum$DepMap_ID[tcl.ind]
+tcl.ccle.names <- ccle.names[tcl.ind] # Full CCLE names for TNBC lines
+tcl.name <- cl.name[tcl.ind] %>% as.character() #...and the stripped cell line names in the same order.
+
+## Get names of claudin-low (basal B) and basal-like (basal A) cell lines:
+bl.cells <- tcl.info %>% 
+  filter(lineage_molecular_subtype %in% "basal_A")
+clow.cells <- tcl.info %>% 
+  filter(lineage_molecular_subtype %in% "basal_B")
+```
+
+And now load the CCLE RNA-seq data.
+```{r Load CCLE RNA-seq data, warning=FALSE, message = F}
+##### Load CCLE RNA-seq data: log2(RSEM_TPM+1) values
+## File path for CCLE RNA-seq data:
+fn4 = "CCLE_expression.csv"
+
+## Load CCLE RNA-seq data:
+ccle.rna.raw <- read_csv(fn4, col_names=T)
+ccle.genes <- colnames(ccle.rna.raw)[-1] %>% 
+  gsub("\\ .*","",.) # Remove extraneous suffixes on gene names
+colnames(ccle.rna.raw) <- c("Cell.line", ccle.genes)
+ccle.rna <- ccle.rna.raw %>% mutate(Cell.line = match(Cell.line, cl.sum$DepMap_ID) %>% cl.sum$stripped_cell_line_name[.]) %>% na.omit
+rownames(ccle.rna) <- ccle.rna$Cell.line 
+
+## Pull out the TNBC data:
+tcl.ccle.rna <- which(ccle.rna$Cell.line %in% tcl.name) %>% ccle.rna[.,] # mRNA expression
+tcl.ccle.rna <- tcl.ccle.rna[order(tcl.ccle.rna$BCAR3, decreasing = T),] # Reorder rows based on decreasing BCAR3 expression
+rownames(tcl.ccle.rna) <- tcl.ccle.rna$Cell.line
+
+## Info for claudin-low and basal-like cell lines with mRNA data:
+clow.cells_rna <- clow.cells %>%  # claudin-low
+  filter(stripped_cell_line_name %in% rownames(tcl.ccle.rna))
+bl.cells_rna <- bl.cells %>%  # basal-like
+  filter(stripped_cell_line_name %in% rownames(tcl.ccle.rna))
+```
+
+## MSigDB collections
+```{r Get MSigDB collections, warning=FALSE, message=FALSE}
+## Load packages:
+library(org.Hs.eg.db)
+library(msigdbr)
+library(GSVA)
+
+### Define MSigDB gene set collection(s) to use --> retrieve with 'msigdbr' package:
+species = "Homo sapiens"
+
+## Retrieve Hallmark and canonical pathways collections in the database:
+cp.r = msigdbr(species = species, category = "C2", subcategory = "CP:REACTOME")
+gene_sets1 <- cp.r %>% split(x = .$entrez_gene, f = .$gs_name)
+```
+
+# GSVA calculations
+```{r warning=F,message=F}
+#### Expression data prep ####
+data_for_gsva <- tcl.ccle.rna %>%
+  dplyr::select(-Cell.line) %>%
+  t()
+colnames(data_for_gsva) <- tcl.ccle.rna$Cell.line
+
+
+## Convert gene names to Entrez IDs:
+entrez_ids <- rownames(data_for_gsva) %>% mapIds(org.Hs.eg.db, ., 'ENTREZID', 'SYMBOL')
+rownames(data_for_gsva) <- entrez_ids
+
+
+### Match BCAR3 expression data to cell lines and format correctly to append to GSVA data above:
+b3.data_for_heatmap <- match(colnames(data_for_gsva), tcl.ccle.rna$Cell.line) %>%
+  tcl.ccle.rna$BCAR3[.] %>% scale %>% data.frame(BCAR3.mRNA=.) %>% 
+  mutate(Cell.Subtype = match(colnames(data_for_gsva),tcl.info$stripped_cell_line_name) %>% tcl.info$lineage_molecular_subtype[.])
+rownames(b3.data_for_heatmap) <- colnames(data_for_gsva)
+b3.data_for_heatmap$Cell.Subtype[b3.data_for_heatmap$Cell.Subtype==""] <- "basal_B"
+
+
+#### Calculate GSVA enrichment scores ####
+force_calculate_gsva <- T
+if(!file.exists("gsva_results.Rdata") | force_calculate_gsva){
+  ## Hallmark and CP collections
+  gsva1 <- gsva(
+    data_for_gsva, 
+    gene_sets1, 
+    method = "gsva", 
+    kcdf = "Gaussian",
+    min.sz = 5, # Minimum number of genes required to include a gene set
+    parallel.sz=detectCores()-1
+    )
+
+  
+  ### Save GSVA results:
+  save(list = "gsva1", file = "gsva_results.Rdata")
+  
+} else if (file.exists("gsva_results.Rdata") & !exists("gsva1")){ 
+  ## Load GSVA results, if they haven't been loaded already:
+  load("gsva_results.Rdata") 
+}
+gsva1.df <- gsva1 %>% data.frame(gene.set=rownames(.), .) # Convert to data frame
+  rownames(gsva1.df) <- gsva1.df$gene.set
+  
+```
+
+## GSVA-BCAR3 correlation calculations
+```{r Ranks of GSVA scores to BCAR3 expression, message=F,warning=F}
+### Calculate Spearman's Rs and p-values using Hmisc package:
+b3.corr_data_cp <- gsva1 %>%
+  t() %>%
+  data.frame() %>%
+  mutate(
+    BCAR3 = match(rownames(.), rownames(b3.data_for_heatmap)) %>% b3.data_for_heatmap$BCAR3.mRNA[.]
+    ) %>%
+  data.matrix()
+
+rs.b3_cp <- matrix(0, nrow = ncol(b3.corr_data_cp)-1, ncol = 3)
+colnames(rs.b3_cp) <- c("r","p","n")
+rownames(rs.b3_cp) <- rownames(gsva1)
+
+## Calculate ranks/correlations and p-values:
+for(i in 1:nrow(rs.b3_cp)){
+  rs_temp <- rcorr(
+    x = b3.corr_data_cp[,"BCAR3"],
+    y = b3.corr_data_cp[,i],
+    type = "spearman") 
+  rs.b3_cp[i,1] = rs_temp$r[1,2]
+  rs.b3_cp[i,2] = rs_temp$P[1,2]
+  rs.b3_cp[i,3] = rs_temp$n[1,2]
+}
+rs.b3_cp <- rs.b3_cp %>% 
+  data.frame() %>%
+  mutate(gene.set = rownames(.), p.adj = p.adjust(p, method = "BH")) %>% .[order(.$r, decreasing=T),] %>% 
+  mutate(sign = sign(r), collection = sub("\\_.*", "", gene.set),
+         gene.set = factor(gene.set, levels=gene.set))
+rownames(rs.b3_cp) <- rs.b3_cp$gene.set
+```
+
+
+```{r Plot correlation results, message=F, warning=F}
+#################### Plots ####################
+ptsize <- 1.0
+ptshape <- 19
+lnsz <- 0.8
+txtsz <- 1
+txtsz.cowplot <- 8
+
+rs.alpha <- 0.05 # Desired significance level to test
+
+## Filter data for RTK-related Reactome gene sets:
+keyword1 <- c("EGFR","FGFR","NRTK","PDGFR","VEGFR",
+              "KIT","ERBB","MET_","_MET$","IGF1R","MST1",
+              "INSULIN_LIKE_GROWTH_FACTOR_1_RECEPTOR",
+              "INSULIN_RECEPTOR","BY_MET")  # keywords for RTK-related Reactome gene sets
+
+gsva1 <- rs.b3_cp %>%
+  filter(p < rs.alpha) %>%
+  filter(str_detect(gene.set, paste(keyword1, collapse="|"))) %>% 
+  group_by(sign) %>% 
+  slice_max(order_by=abs(r), n=20) %>%
+  filter(sign > 0) %>%
+  arrange(r) %>% 
+  mutate(
+    gene.set = gsub("_"," ", gene.set),
+    gene.set = gsub("REACTOME","", gene.set)
+    ) %>% 
+  mutate(gene.set = str_to_sentence(gene.set))
+
+cap_phrases <- c("MET","FGFR2 IIIA TM","EGFR","Rap1","Rac1")
+
+for(i in 1:length(cap_phrases)){
+  gsva1 <- gsva1 %>% 
+    mutate(
+      gene.set = cap_phrases[i] %>% str_replace(string=gene.set, pattern=str_to_lower(.), replacement=.),
+      gene.set = cap_phrases[i] %>% str_replace(string=gene.set, pattern=str_to_sentence(.), replacement=.)
+      ) %>% 
+    mutate(gene.set = factor(gene.set, levels=gene.set))
+}
+
+## Plot correlation results:
+ggplot(gsva1, aes(y = gene.set, x = r, color = -log10(p))) +
+  geom_col(aes(fill=-log10(p)), color="black", size = lnsz) +
+  scale_fill_gradientn(colors=colorRampPalette(c("white","grey50","black"))(101)) +
+  theme_minimal_grid(14) +
+  labs(title=paste("Top Reactome RTK GSVA score correlations\nwith BCAR3 mRNA (",nrow(tcl.ccle.rna)," TNBC cell lines)", sep = ""),
+       y=" Reactome gene set", x = "Spearman's Rs to BCAR3 mRNA")
+ggsave("GSVA-B3-mRNA-rank_corr-plot.png", width = 9, height = 4.0)
+ggsave("GSVA-B3-mRNA-rank_corr-plot.pdf", width = 9, height = 4.0)
+```
+
+
+# Session info
+```{r Print session info}
+sink("sessionInfo.txt")
+sessionInfo()
+sink()
+```
